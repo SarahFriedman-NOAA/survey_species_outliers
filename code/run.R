@@ -25,6 +25,7 @@ source("code/check_outlier.R")
 
 
 # RACEBASE tables ----------------------------------------------------
+# source("C:/Users/sarah.friedman/Work/Rfunctions/ConnectToOracle_STF.R")
 
 # downloading relevant data from Oracle
 source("code/connect_to_oracle.R")
@@ -86,7 +87,7 @@ species_maxyr <- catch %>%
 
 
 #all catch/haul data to check against
-catch_haul <- catch %>%
+all_records <- catch %>%
   filter(species_code %in% species_maxyr$species_code & year > 2000) %>%
   left_join(haul, by = c("cruisejoin", "hauljoin")) %>%
   left_join(cruise) %>%
@@ -100,7 +101,7 @@ catch_haul <- catch %>%
 
 # outlier species from this year
 outlier_spp <- species_maxyr %>%
-  mutate(outlier = purrr::map(species_code, ~check_outlier(.x, maxyr, catch_haul))) %>%
+  mutate(outlier = purrr::map(species_code, ~check_outlier(.x, maxyr, all_records))) %>%
   unnest(cols = outlier) %>%
   filter(!is.na(species_name)) %>%
   left_join(species_codes) 
