@@ -40,7 +40,7 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
     if (plot & length(o) > 0) {
       world <- map_data("world2", wrap = c(40, 400)) %>%
         filter(region %in% c("Russia", "USA", "Canada"))
-      sp <- paste(sp_catch$species_name[1], sp_catch$species_code[1])
+      sp <- paste0(sp_catch$species_name[1], " (", sp_catch$species_code[1], ")")
 
       p <- ggplot() +
         geom_polygon(
@@ -58,7 +58,9 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
           data = o, aes(x = start_longitude, y = start_latitude),
           col = "red", cex = 1.5
         ) +
-        ggtitle(label = sp)
+        ggtitle(label = sp, 
+             subtitle = ifelse(!is.na(out$voucher), "vouchered", "")
+             )
       print(p)
     }
   } else {
