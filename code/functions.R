@@ -1,10 +1,36 @@
+# convert degree decimal minutes to decimal degrees
+ddm_to_dd <- function(x, type){
+  if(type == "lat"){
+  out <- tibble(ddm = x) %>%
+    separate(ddm, into = c("deg", "min"), sep = "(?<=[0-9]{2})", extra = "merge") %>%
+    mutate(deg = as.numeric(deg),
+           min = as.numeric(min)) %>%
+    mutate(dd = deg + (min/60))
+  } 
+  if(type == "long"){
+    out <- tibble(ddm = x) %>%
+      separate(ddm, into = c("deg", "min"), sep = "(?<=[0-9]{3})", extra = "merge") %>%
+      mutate(deg = as.numeric(deg),
+             min = as.numeric(min)) %>%
+      mutate(dd = deg + (min/60))
+  }
+  out$dd
+  }
+  
+
 # function to identify outliers in speices IDs for each year
-check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
+check_outlier <- function(data, check_year, catch_data, plot = FALSE,
                           eps = 7, minPts = 2) {
   sp_catch <- catch_data %>%
-    filter(species_code == afsc_code)
+    filter(species_code == data$species_code[1]) 
 
-  if (nrow(sp_catch > 0)) {
+  if(!any(sp_catch$year %in% check_year)){
+    sp_catch <- bind_rows(sp_catch, data) %>%
+      fill(species_name) %>%
+      filter(!is.na(start_latitude))
+  }
+  
+  if ( nrow(sp_catch) > 0 ) {
     # clustering <- dbscan(sp_catch[,c("start_longitude", "start_latitude")],
     #                      eps = 3, minPts = 2, borderPoints = FALSE)
     clustering <- dbscan(sp_catch[, c("start_longitude", "start_latitude")],
@@ -12,7 +38,7 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
     )
 
     # flag anything that is only observed from check year
-    if (length(check_year) == 1 & all(sp_catch$year == check_year)) {
+    if ( length(check_year) == 1 & all(sp_catch$year %in% check_year) ) {
       tmp <- sp_catch %>%
         mutate(
           cluster = 0,
@@ -22,8 +48,7 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
       tmp <- sp_catch %>%
         mutate(
           cluster = clustering$cluster,
-          outlier = ifelse(cluster == 0, "flag", "")
-        ) %>%
+          outlier = ifelse(cluster == 0, "flag", "")) %>%
         filter(year %in% check_year)
     }
 
@@ -34,10 +59,11 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
     out <- tmp %>%
       dplyr::select(-cluster) %>%
       filter(outlier != "") %>%
-      select(-species_code, -outlier)
+      select(-species_name, -outlier)
 
-
-    if (plot & length(o) > 0) {
+    # if( nrow(o) == nrow(sp_catch) ) plot <- F
+    
+    if ( plot & length(o) > 0 ) {
       world <- map_data("world2", wrap = c(40, 400)) %>%
         filter(region %in% c("Russia", "USA", "Canada"))
       sp <- paste0(sp_catch$species_name[1], " (", sp_catch$species_code[1], ")")
@@ -58,7 +84,10 @@ check_outlier <- function(afsc_code, check_year, catch_data, plot = FALSE,
           data = o, aes(x = start_longitude, y = start_latitude),
           col = "red", cex = 1.5
         ) +
-        ggtitle(label = sp, 
+        # geom_text_repel(data = o, aes(x = start_longitude, y = start_latitude,
+        #                               label = year)) +
+        # ggtitle(label = sp, subtitle = sp_catch$common_name[1])
+        ggtitle(label = sp,
              subtitle = ifelse(!is.na(out$voucher), "vouchered", "")
              )
       print(p)

@@ -1,5 +1,6 @@
 ## User definied entries  -----------------------------------------------------------
-maxyr <- 2022
+maxyr <- 2023
+not_finalized <- TRUE #are not-yet-finalized data being checked?
 
 
 ## Load packages -----------------------------------------------------------
@@ -8,7 +9,10 @@ pkg <- c("tidyverse",
          "here", 
          "janitor", 
          "getPass", 
-         "dbscan")
+         "dbscan",
+         "ggrepel",
+         "gapindex")
+
 for (p in pkg) {
   if (!require(p, character.only = TRUE)) {
     install.packages(p)
@@ -18,35 +22,23 @@ for (p in pkg) {
 rm(p, pkg)
 
 
-# loading check outlier function
-source("code/check_outlier.R")
+
+# loading bespoke functions
+source("code/functions.R")
 
 
 
 
 # RACEBASE tables ----------------------------------------------------
-# source("C:/Users/sarah.friedman/Work/Rfunctions/ConnectToOracle_STF.R")
+#source("C:/Users/sarah.friedman/Work/Rfunctions/ConnectToOracle_STF.R")
 
-# downloading relevant data from Oracle
+# downloading relevant racebase data from Oracle
 source("code/connect_to_oracle.R")
 source("code/download_data.R")
 
 
-# get catch and taxonomy info
-catch <- read_csv("data/oracle/racebase-catch.csv") %>%
-  janitor::clean_names() %>%
-  mutate(year = as.numeric(stringr::str_extract(cruise, "^[:digit:]{4}")))
-
-cruise <- read_csv("data/oracle/racebase-cruise.csv") %>%
-  janitor::clean_names()
-
-haul <- read_csv("data/oracle/racebase-haul.csv") %>%
-  clean_names()
-
-
-species_codes <- read_csv("data/oracle/race_data-race_species_codes.csv") %>%
-  janitor::clean_names() %>%
-  dplyr::select("species_code", "species_name", "common_name")
+# cleaning and formatting racebase data
+source("code/clean_data.R")
 
 
 
@@ -56,26 +48,35 @@ species_codes <- read_csv("data/oracle/race_data-race_species_codes.csv") %>%
 
 # non species indicator strings
 rm_bits <- paste0(
-  c(" egg", "egg case", "larva", "larvae", " tubes", "sp\\.$"), 
-  collapse = "|"
+  c("egg", "egg case", "larva", "larvae", "tubes", "sp\\.$", "empty ", 
+    "\\(juvenile\\)", "unid\\."), 
+  collapse = "| "
 )
 
 
 
 # filtering to just specimens IDed to species and caught this survey year
-species_maxyr <- catch %>%
+if(not_finalized){
+  catch_maxyr <- new_catch %>%
+    mutate(year = maxyr)
+} else {
+  catch_maxyr <- old_catch %>%
+    filter(year == maxyr)
+}
+
+
+species_maxyr <- catch_maxyr %>%
   left_join(species_codes) %>%
   mutate(species_name = trimws(species_name),
          level = case_when(
            str_detect(species_name, rm_bits) | 
+             str_detect(common_name, "morphotype") |
              !str_detect(species_name, " ") |
              is.na(species_name) ~ "",
            TRUE ~ "species"
          )) %>% 
   filter(level == "species") %>%
-  dplyr::select(-level) %>%
-  select(species_code) %>% 
-  unique()
+  dplyr::select(-level)
 
 
 
@@ -87,21 +88,19 @@ species_maxyr <- catch %>%
 
 
 #all catch/haul data to check against
-all_records <- catch %>%
-  filter(species_code %in% species_maxyr$species_code & year > 2000) %>%
-  left_join(haul, by = c("cruisejoin", "hauljoin")) %>%
-  left_join(cruise) %>%
-  filter(grepl("bottom trawl survey", survey_name, ignore.case = TRUE)) %>%
-  filter(abundance_haul == "Y") %>%
-  
-  left_join(species_codes, by ="species_code") %>%
-  dplyr::select(species_code, species_name, start_longitude, 
-                start_latitude, gear_depth, voucher, year) 
+racebase_records <- old_catch %>%
+  filter(species_code %in% species_maxyr$species_code) %>%
+  left_join(old_haul) %>%
+  full_join(species_codes, by ="species_code") %>%
+  dplyr::select(species_code, species_name, common_name, start_longitude, 
+                start_latitude, voucher, year) 
 
 
 # outlier species from this year
 outlier_spp <- species_maxyr %>%
-  mutate(outlier = purrr::map(species_code, ~check_outlier(.x, maxyr, all_records))) %>%
+  group_by(species_name) %>%
+  nest() %>%
+  mutate(outlier = purrr::map(data, ~check_outlier(.x, maxyr, racebase_records))) %>%
   unnest(cols = outlier) %>%
   filter(!is.na(species_name)) %>%
   left_join(species_codes) 
@@ -111,6 +110,11 @@ outlier_spp <- species_maxyr %>%
 
 # plots outliers to pdf document
 pdf(paste0("output/species_outliers_", maxyr, ".pdf"))
-purrr::map(unique(outlier_spp$species_code),
-           ~check_outlier(.x, maxyr, catch_haul, plot = T))
+species_maxyr %>%
+  filter(species_name %in% outlier_spp$species_name) %>%
+  group_by(species_name) %>%
+  nest() %>%
+  mutate(outlier = purrr::map(data, ~check_outlier(.x, maxyr, racebase_records, plot = T))) 
 dev.off()
+
+

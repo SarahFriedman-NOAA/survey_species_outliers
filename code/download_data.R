@@ -7,13 +7,24 @@ locations <- c(
   "RACEBASE.SPECIMEN",
   "RACEBASE.CRUISE",
   "RACEBASE.CATCH",
-  #"RACEBASE.SPECIES_CLASSIFICATION",
   
   ## Race Data tables
-  "RACE_DATA.RACE_SPECIES_CODES"
+  "RACE_DATA.RACE_SPECIES_CODES",
+  #"RACE_DATA.CRUISES",
+  "RACE_DATA.V_CRUISES"
 )
 
 
+# adding edit tables for non-finalized data
+if(not_finalized){
+  locations <- c(locations, 
+ 
+   ## Race Data edit tables
+  "RACE_DATA.EDIT_CATCH_SPECIES",
+  "RACE_DATA.EDIT_CATCH_SAMPLES",
+  "RACE_DATA.EDIT_HAULS",
+  "RACE_DATA.EDIT_EVENTS")
+}
 
 
 if (!file.exists("data/oracle")) dir.create("data/oracle", recursive = TRUE)
